@@ -1,0 +1,90 @@
+[
+  {
+    "ok": true,
+    "output": "SOMETHING"
+  },
+  {
+    "ok": true,
+    "output": 6
+  },
+  {
+    "ok": false,
+    "type": "SnekSyntaxError"
+  },
+  {
+    "ok": false,
+    "type": "SnekSyntaxError"
+  },
+  {
+    "ok": false,
+    "type": "SnekNameError"
+  },
+  {
+    "ok": false,
+    "type": "SnekSyntaxError"
+  },
+  {
+    "ok": false,
+    "type": "SnekSyntaxError"
+  },
+  {
+    "ok": false,
+    "type": "SnekNameError"
+  },
+  {
+    "ok": false,
+    "type": "SnekNameError"
+  },
+  {
+    "ok": false,
+    "type": "SnekNameError"
+  },
+  {
+    "ok": false,
+    "type": "SnekSyntaxError"
+  },
+  {
+    "ok": false,
+    "type": "SnekSyntaxError"
+  },
+  {
+    "ok": true,
+    "output": "SOMETHING"
+  },
+  {
+    "ok": false,
+    "type": "SnekSyntaxError"
+  },
+  {
+    "ok": true,
+    "output": "SOMETHING"
+  },
+  {
+    "ok": false,
+    "type": "SnekEvaluationError"
+  },
+  {
+    "ok": true,
+    "output": -7
+  },
+  {
+    "ok": false,
+    "type": "SnekSyntaxError"
+  },
+  {
+    "ok": false,
+    "type": "SnekSyntaxError"
+  },
+  {
+    "ok": true,
+    "output": "SOMETHING"
+  },
+  {
+    "ok": false,
+    "type": "SnekSyntaxError"
+  },
+  {
+    "ok": false,
+    "type": "SnekSyntaxError"
+  }
+]

@@ -1,0 +1,11 @@
+[package]
+name = "snek"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.86"
+itertools = "0.13.0"
+logos = "0.14.1"
+serde = { version = "1.0.208", features = ["derive"] }
+serde_json = "1.0.125"
