@@ -4,36 +4,38 @@ use anyhow::bail;
 use itertools::Itertools;
 use serde::{de::{Visitor, Error}, Deserialize, Serialize};
 
-use crate::parser::SnekError;
+use crate::error::SnekError;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum TestOutput {
     Something(String), // Implies that we don't care about the thing
     Number(f64),
     List(Vec<TestOutput>)
 }
-pub struct EvaluationResult(Result<TestOutput, SnekError>);
 
-impl From<EvaluationResult> for Result<TestOutput, SnekError> {
-    fn from(value: EvaluationResult) -> Self {
+#[derive(Clone)]
+pub struct TestEvaluationResult(Result<TestOutput, SnekError>);
+
+impl From<TestEvaluationResult> for Result<TestOutput, SnekError> {
+    fn from(value: TestEvaluationResult) -> Self {
         value.0
     }
 }
 
-struct EvaluationResultVisitor {}
+struct TestEvaluationResultVisitor {}
 
-impl<'de> Deserialize<'de> for EvaluationResult {
+impl<'de> Deserialize<'de> for TestEvaluationResult {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
         where
             D: serde::Deserializer<'de> {
         
-        deserializer.deserialize_map(EvaluationResultVisitor {})
+        deserializer.deserialize_map(TestEvaluationResultVisitor {})
     }
 }
 
-impl<'de> Visitor<'de> for EvaluationResultVisitor {
-    type Value = EvaluationResult;
+impl<'de> Visitor<'de> for TestEvaluationResultVisitor {
+    type Value = TestEvaluationResult;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(formatter, "A structure containing the boolean key 'ok'. If it's okay, contains the key 'output', otherwise the key 'type'")
@@ -56,7 +58,7 @@ impl<'de> Visitor<'de> for EvaluationResultVisitor {
             }
 
             let value: TestOutput = map.next_value()?;
-            Ok(EvaluationResult(Ok(value)))
+            Ok(TestEvaluationResult(Ok(value)))
         } else {
             if map.next_key::<String>()?.as_ref()
                 .ok_or(A::Error::custom("Must have two keys"))? != "type" 
@@ -70,7 +72,7 @@ impl<'de> Visitor<'de> for EvaluationResultVisitor {
                 "SnekNameError" => SnekError::SnekNameError,
                 other => return Err(A::Error::custom(format!("Unrecognized snek error: {}", other)))
             };
-            Ok(EvaluationResult(Err(error)))
+            Ok(TestEvaluationResult(Err(error)))
         };
 
         if map.next_key::<String>()? != None {
@@ -86,13 +88,13 @@ fn load_input_file<P: AsRef<Path>>(path: P) -> anyhow::Result<Vec<String>> {
     Ok(source.lines().collect::<Result<Vec<String>, _>>()?)
 }
 
-fn load_output_file<P: AsRef<Path>>(path: P) -> anyhow::Result<Vec<EvaluationResult>> {
+fn load_output_file<P: AsRef<Path>>(path: P) -> anyhow::Result<Vec<TestEvaluationResult>> {
     let source = std::fs::read(path)?;
-    let result: Vec<EvaluationResult> = serde_json::from_slice(&source)?;
+    let result: Vec<TestEvaluationResult> = serde_json::from_slice(&source)?;
     Ok(result)
 }
 
-pub fn load_test_pair(testcase: usize) -> anyhow::Result<Vec<(String, EvaluationResult)>> {
+pub fn load_test_pair(testcase: usize) -> anyhow::Result<Vec<(String, TestEvaluationResult)>> {
     if testcase < 13 || testcase > 72 { bail!("Testcase out of bounds"); }
 
     let base_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

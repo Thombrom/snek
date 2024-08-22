@@ -1,5 +1,7 @@
 use logos::{Lexer, Logos};
 
+use crate::error::SnekError;
+
 
 #[derive(Debug, Logos)]
 #[logos(skip r"[ \t\r\n\f]+")]
@@ -18,7 +20,6 @@ enum Token<'a> {
 pub enum Literal<'a> {
     Identifier(&'a str),
     Number(f64),
-    Boolean(bool),
 }
 
 // Sexps are the basic building blocks of snek
@@ -26,13 +27,6 @@ pub enum Literal<'a> {
 pub enum Sexp<'a> {
     Atom(Literal<'a>),
     Expression(Vec<Self>)
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum SnekError {
-    SnekSyntaxError,
-    SnekNameError,
-    SnekEvaluationError,
 }
 
 type ParseResult<O> = Result<O, SnekError>;
@@ -120,9 +114,7 @@ fn parse_atom<'a, 'b: 'a>(tokens: &'a[Token<'b>]) -> ParseResult<(&'a [Token<'b>
     let (tokens, literal) = parse_token(|token| matches!(token, Token::Literal(_)))(tokens)?;
     let literal = match literal {
         Token::Literal(literal) => {
-            if let Ok(float) = literal.parse() { Sexp::Atom(Literal::Number(float)) }
-            else if *literal == "#t" { Sexp::Atom(Literal::Boolean(true)) }
-            else if *literal == "#f" { Sexp::Atom(Literal::Boolean(false)) }
+            if let Ok(number) = literal.parse() { Sexp::Atom(Literal::Number(number)) }
             else { Sexp::Atom(Literal::Identifier(literal))}
         }
         _ => unreachable!()
