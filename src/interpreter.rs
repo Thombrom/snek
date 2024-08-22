@@ -79,7 +79,7 @@ fn builtin_list<'a, 'b>(mut values: Vec<SnekValue<'a, 'b>>) -> EvaluationResult<
     Ok(cond)
 }
 
-fn builtin_car<'a, 'b>(mut values: Vec<SnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn builtin_car<'a, 'b>(values: Vec<SnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
     if values.len() != 1 { return Err(SnekError::SnekSyntaxError); }
 
     match &values[0] {
@@ -88,7 +88,7 @@ fn builtin_car<'a, 'b>(mut values: Vec<SnekValue<'a, 'b>>) -> EvaluationResult<'
     }
 }   
 
-fn builtin_cdr<'a, 'b>(mut values: Vec<SnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn builtin_cdr<'a, 'b>(values: Vec<SnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
     if values.len() != 1 { return Err(SnekError::SnekSyntaxError); }
 
     match &values[0] {
@@ -96,6 +96,99 @@ fn builtin_cdr<'a, 'b>(mut values: Vec<SnekValue<'a, 'b>>) -> EvaluationResult<'
         _ => Err(SnekError::SnekEvaluationError)
     }
 }   
+
+fn builtin_length_impl<'a, 'b>(value: &SnekValue<'a, 'b>) -> Result<usize, SnekError> {
+    match value {
+        SnekValue::Cons(Cons(None)) => Ok(0),
+        SnekValue::Cons(Cons(Some(value))) => Ok(1 + builtin_length_impl(&value.1)?),
+        _ => Err(SnekError::SnekEvaluationError)
+    }
+}
+
+fn builtin_length<'a, 'b>(values: Vec<SnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+    if values.len() != 1 { return Err(SnekError::SnekSyntaxError); }
+    Ok(SnekValue::Number(builtin_length_impl(&values[0])? as f64))
+}
+
+fn builtin_elt_at_index_impl<'a, 'b>(value: &SnekValue<'a, 'b>, index: usize) -> EvaluationResult<'a, 'b> {
+    match (value, index) {
+        (SnekValue::Cons(Cons(Some(value))), 0) => Ok(value.0.clone()),
+        (SnekValue::Cons(Cons(Some(value))), _) => builtin_elt_at_index_impl(&value.1, index - 1),
+        _ => Err(SnekError::SnekEvaluationError)
+    }
+}
+
+fn builtin_elt_at_index<'a, 'b>(values: Vec<SnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+    if values.len() != 2 { return Err(SnekError::SnekSyntaxError); }
+    match (&values[0], &values[1]) {
+        (value, SnekValue::Number(index)) => builtin_elt_at_index_impl(&value, index.round() as usize),
+        _ => Err(SnekError::SnekEvaluationError)
+    }    
+}
+
+fn builtin_concat_impl<'a, 'b>(current: &SnekValue<'a, 'b>, lists: &[SnekValue<'a, 'b>]) -> EvaluationResult<'a, 'b> {
+    match current {
+        SnekValue::Cons(Cons(None)) => {
+            if lists.len() == 0 { return Ok(SnekValue::Cons(Cons::nil())); }
+            builtin_concat_impl(&lists[0], &lists[1..])
+        }
+        SnekValue::Cons(Cons(Some(cons))) => {
+            let cdr = builtin_concat_impl(&cons.1, lists)?;
+            Ok(SnekValue::Cons(Cons::new(cons.0.clone(), cdr)))
+        },
+        _ => Err(SnekError::SnekEvaluationError)
+    }
+}
+
+fn builtin_concat<'a, 'b>(values: Vec<SnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+    if values.len() == 0 { return Ok(SnekValue::Cons(Cons::nil())); }
+    builtin_concat_impl(&values[0], &values[1..])
+}
+
+fn builtin_map_impl<'a, 'b>(function: &Function<'a, 'b>, list: &SnekValue<'a, 'b>) -> EvaluationResult<'a, 'b> {
+    match list {
+        SnekValue::Cons(Cons(None)) => Ok(list.clone()),
+        SnekValue::Cons(Cons(Some(value))) => {
+            let cdr = builtin_map_impl(function, &value.1)?;
+            let car = function.evaluate(vec![value.0.clone()])?;
+            Ok(SnekValue::Cons(Cons::new(car, cdr)))
+        },
+        _ => Err(SnekError::SnekEvaluationError)
+    }
+}
+
+fn builtin_map<'a, 'b>(values: Vec<SnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+    if values.len() != 2 { return Err(SnekError::SnekSyntaxError); }
+
+    match &values[0] {
+        SnekValue::Function(function) => builtin_map_impl(function, &values[1]),
+        _ => Err(SnekError::SnekEvaluationError)
+    }
+}
+
+fn builtin_filter_impl<'a, 'b>(function: &Function<'a, 'b>, list: &SnekValue<'a, 'b>) -> EvaluationResult<'a, 'b> {
+    match list {
+        SnekValue::Cons(Cons(None)) => Ok(SnekValue::Cons(Cons::nil())),
+        SnekValue::Cons(Cons(Some(value))) => {
+            let cdr = builtin_filter_impl(function, &value.1)?;
+            match function.evaluate(vec![value.0.clone()])? {
+                SnekValue::Boolean(true) => Ok(SnekValue::Cons(Cons::new(value.0.clone(), cdr))),
+                SnekValue::Boolean(false) => Ok(cdr),
+                _ => Err(SnekError::SnekEvaluationError)
+            }
+        },
+        _ => Err(SnekError::SnekEvaluationError)
+    }
+}
+
+fn builtin_filter<'a, 'b>(values: Vec<SnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+    if values.len() != 2 { return Err(SnekError::SnekSyntaxError); }
+
+    match &values[0] {
+        SnekValue::Function(function) => builtin_filter_impl(function, &values[1]),
+        _ => Err(SnekError::SnekEvaluationError)
+    }
+}
 
 pub fn builtin_frame<'a, 'b: 'a>() -> Rc<Frame<'a, 'b>> {
     Frame::root(HashMap::from([
@@ -116,6 +209,11 @@ pub fn builtin_frame<'a, 'b: 'a>() -> Rc<Frame<'a, 'b>> {
         ("list", SnekValue::Function(Function::Builtin(&builtin_list))),
         ("car", SnekValue::Function(Function::Builtin(&builtin_car))),
         ("cdr", SnekValue::Function(Function::Builtin(&builtin_cdr))),
+        ("length", SnekValue::Function(Function::Builtin(&builtin_length))),
+        ("elt-at-index", SnekValue::Function(Function::Builtin(&builtin_elt_at_index))),
+        ("concat", SnekValue::Function(Function::Builtin(&builtin_concat))),
+        ("map", SnekValue::Function(Function::Builtin(&builtin_map))),
+        ("filter", SnekValue::Function(Function::Builtin(&builtin_filter))),
     ]))
 }
 
@@ -518,7 +616,7 @@ mod tests {
 
     #[test]
     fn evaluate_testcase() -> anyhow::Result<()> {
-        for testcase in 16..=43 {
+        for testcase in all_testcases() {
             println!("Running testcase {}", testcase);
             let entries = load_test_pair(testcase)?;
             assert_run(testcase, entries)?;
