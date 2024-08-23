@@ -1,14 +1,4 @@
-#![feature(array_windows)]
-
-use context::EvaluationContext;
-
-mod error;
-mod interpreter;
-mod parser;
-mod context;
-
-#[cfg(test)]
-mod test_utils;
+use snek::EvaluationContext;
 
 fn main() -> anyhow::Result<()> {
     let program = vec![

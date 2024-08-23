@@ -1,4 +1,4 @@
-use crate::{error::SnekError, interpreter::{builtin_frame, evaluate, Frame, SnekValue}, parser::{parser, Sexp}};
+use crate::{builtin::builtin_frame, error::SnekError, interpreter::{evaluate, Frame, SnekValue}, parser::{parser, Sexp}};
 
 
 /// An evaluation context that takes sexps and evaluates them to give
