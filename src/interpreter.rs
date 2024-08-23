@@ -1,9 +1,9 @@
 use core::fmt;
-use std::{any::Any, cell::RefCell, collections::HashMap, rc::Rc, sync::Mutex};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use itertools::Itertools;
 
-use crate::{error::SnekError, parser::{parser, Literal, Sexp}};
+use crate::{context::AllocationContext, error::SnekError, parser::{Literal, Sexp}};
 
 type EvaluationResult<'a, 'b> = Result<InternalSnekValue<'a, 'b>, SnekError>;
 
@@ -75,7 +75,7 @@ fn builtin_eq<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>, _ctx: &mut Allocat
     builtin_compare(values, |a, b| (a - b).abs() < 1.0e-5)
 }
 
-fn builtin_list<'a, 'b>(mut values: Vec<InternalSnekValue<'a, 'b>>, ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
+fn builtin_list<'a, 'b>(mut values: Vec<InternalSnekValue<'a, 'b>>, _ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     let mut cond = InternalSnekValue::Cons(Cons::nil());
 
     while let Some(value) = values.pop() {
@@ -244,7 +244,7 @@ pub fn builtin_frame<'a, 'b: 'a>(ctx: &mut AllocationContext) -> *const Frame<'a
 }
 
 #[derive(Clone)]
-struct Cons<'a, 'b>(Option<Rc<(InternalSnekValue<'a, 'b>, InternalSnekValue<'a, 'b>)>>);
+pub(crate) struct Cons<'a, 'b>(Option<Rc<(InternalSnekValue<'a, 'b>, InternalSnekValue<'a, 'b>)>>);
 
 impl<'a, 'b> fmt::Debug for Cons<'a, 'b> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -266,7 +266,7 @@ impl<'a, 'b> Cons<'a, 'b> {
 // a value that is internal to the module. Any values that are
 // exposed to the outside world are converted to [SnekValue]
 #[derive(Clone)]
-enum InternalSnekValue<'a, 'b: 'a> {
+pub(crate) enum InternalSnekValue<'a, 'b: 'a> {
     Boolean(bool),
     Number(f64),
     Function(Function<'a, 'b>),
@@ -340,15 +340,15 @@ impl<'a, 'b> From<InternalSnekValue<'a, 'b>> for SnekValue {
 }
 
 #[derive(Debug, Clone)]
-pub struct Frame<'a, 'b: 'a> {
+pub(crate) struct Frame<'a, 'b: 'a> {
     bindings: RefCell<HashMap<&'b str, InternalSnekValue<'a, 'b>>>,
     parent: Option<* const Frame<'a, 'b>>,
 }
 
 impl<'a, 'b> Drop for Frame<'a, 'b> {
     fn drop(&mut self) {
-        drop(&mut self.bindings);
-        drop(&mut self.parent);
+        let _  = &mut self.bindings;
+        let _ = &mut self.parent;
     }
 }
 
@@ -395,7 +395,7 @@ impl<'a, 'b> Frame<'a, 'b> {
 }
 
 #[derive(Clone)]
-enum Function<'a, 'b: 'a> {
+pub(crate) enum Function<'a, 'b: 'a> {
     Builtin(&'b dyn Fn(Vec<InternalSnekValue<'a, 'b>>, &mut AllocationContext) -> EvaluationResult<'a, 'b>),
     Lisp(LispFunction<'a, 'b>)
 }
@@ -419,7 +419,7 @@ impl<'a, 'b: 'a> Function<'a, 'b> {
 }
 
 #[derive(Debug, Clone)]
-struct LispFunction<'a, 'b: 'a> {
+pub(crate) struct LispFunction<'a, 'b: 'a> {
     parameters: Vec<&'b str>,
     expression: &'a Sexp<'b>,
     environment: *const Frame<'a, 'b>
@@ -651,7 +651,7 @@ fn evaluate_define<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: *const Frame<'
     Ok(function)    
 }
 
-fn evaluate_lambda<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: *const Frame<'a, 'b>, ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
+fn evaluate_lambda<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: *const Frame<'a, 'b>, _ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     // A lambda is a function declaration. The list must have two elements, the first being an expression with all
     // literal atoms in them, and the second element is the body of the function
 
@@ -685,116 +685,20 @@ fn evaulate_list<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: *const Frame<'a,
         .collect::<Result<Vec<InternalSnekValue<'a, 'b>>, SnekError>>()
 }
 
-fn evaluate<'a, 'b: 'a>(sexp: &'a Sexp<'b>, environment: *const Frame<'a, 'b>, ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
+pub(crate) fn evaluate<'a, 'b: 'a>(sexp: &'a Sexp<'b>, environment: *const Frame<'a, 'b>, ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     match sexp {
         Sexp::Atom(atom) => evaluate_atom(atom, environment),
         Sexp::Expression(expression) => evaluate_expression(expression, environment, ctx)
     }
 }
 
-/// An evaluation context that takes sexps and evaluates them to give
-/// values. 
-/// 
-/// It uses a zero-copy approach for sexps, which means the sexps must remain alive as
-/// long as the evaluation context is alive, which does pose some restrictions on the user.
-/// 
-/// If this is too much of a restriction, consider the regular evaluation context
-pub struct BorrowedEvaluationContext<'a, 'b> {
-    allocations: AllocationContext,
-    frame: *const Frame<'a, 'b>
-}
 
-pub struct AllocationContext {
-    allocations: Vec<*const dyn Drop> 
-}
-
-impl AllocationContext {
-    pub fn new() -> Self {
-        Self { allocations: Vec::new() }
-    }
-
-    pub fn as_ptr<T: Drop>(&mut self, value: T) -> *const T {
-        let ptr = Box::into_raw(Box::new(value));
-        self.allocations.push(ptr as *const dyn Drop);
-        ptr
-    }
-
-    pub unsafe fn drop(&mut self) {
-        // println!("Dropping {} allocation", self.allocations.len());
-        self.allocations.drain(..).for_each(|ptr| {
-            drop(unsafe { Box::from_raw(ptr as *mut dyn Drop) })
-        })
-    }
-}
-
-impl<'a, 'b> BorrowedEvaluationContext<'a, 'b> {
-    pub fn new() -> Self {
-        let mut ctx = AllocationContext::new();
-        let frame = Frame::new(builtin_frame(&mut ctx), &mut ctx);
-
-        Self {
-            allocations: ctx,
-            frame
-        }
-    }
-
-    pub fn evaluate_sexp(&mut self, sexp: &'b Sexp<'a>) -> Result<SnekValue, SnekError> {
-        let result = evaluate(sexp, self.frame, &mut self.allocations);
-        result.map(|v| v.into())
-    }
-}
-
-impl<'a, 'b> Drop for BorrowedEvaluationContext<'a, 'b> {
-    fn drop(&mut self) {
-        unsafe { self.allocations.drop() }
-    }
-}
-
-pub struct EvaluationContext<'a, 'b> {
-    allocations: AllocationContext,
-    sexps: Vec<* const Sexp<'a>>,
-    frame: *const Frame<'a, 'b>,
-}
-
-impl<'a, 'b> EvaluationContext<'a, 'b> {
-    pub fn new() -> Self {
-        let mut ctx = AllocationContext::new();
-        let frame = Frame::new(builtin_frame(&mut ctx), &mut ctx);
-
-        Self {
-            allocations: ctx,
-            sexps: Vec::new(),
-            frame: frame
-        }
-    }
-
-    pub fn evaluate_str(&mut self, input: &'a str) -> Result<SnekValue, SnekError> {
-        let sexp = parser(input)?;
-        let ptr = Box::into_raw(Box::new(sexp));
-        self.sexps.push(ptr);
-
-        // Safety:
-        // The pointer will be alive for as long as the evaluation context is alive,
-        // since we never pop from the sexps until we drop
-        evaluate(unsafe { &*ptr }, self.frame, &mut self.allocations)
-            .map(|value| value.into())
-    }
-}
-
-impl<'a, 'b> Drop for EvaluationContext<'a, 'b> {
-    fn drop(&mut self) {
-        // Safety:
-        // All pointers in the vector comes from box
-        self.sexps.drain(..).for_each(|ptr| unsafe { drop(Box::from_raw(ptr as *mut Sexp<'a>)); });
-        unsafe { self.allocations.drop() }
-    }
-}
 
 #[cfg(test)]
 mod tests {
     use anyhow::bail;
 
-    use crate::test_utils::{all_testcases, load_test_pair, TestEvaluationResult, TestOutput};
+    use crate::{context::EvaluationContext, test_utils::{all_testcases, load_test_pair, TestEvaluationResult, TestOutput}};
 
     use super::*;
 

@@ -1,11 +1,11 @@
 #![feature(array_windows)]
 
-use interpreter::{builtin_frame, EvaluationContext, Frame};
-use parser::parser;
+use context::EvaluationContext;
 
 mod error;
 mod interpreter;
 mod parser;
+mod context;
 
 #[cfg(test)]
 mod test_utils;
