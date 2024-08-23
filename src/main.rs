@@ -1,6 +1,6 @@
 #![feature(array_windows)]
 
-use interpreter::{builtin_frame, evaluate, Frame};
+use interpreter::{builtin_frame, Frame, EvaluationContext};
 use parser::parser;
 
 mod error;
@@ -11,7 +11,6 @@ mod parser;
 mod test_utils;
 
 fn main() -> anyhow::Result<()> {
-    let frame = Frame::new(builtin_frame());
     let program = vec![
         "(define (spam) (* eggs 3))",
         "(spam)",
@@ -19,8 +18,9 @@ fn main() -> anyhow::Result<()> {
         "(spam)",
     ].into_iter().map(|line| parser(line)).collect::<Result<Vec<_>, _>>()?;
 
+    let mut context = EvaluationContext::new();
     for (lineno, line) in program.iter().enumerate() {
-        println!("{}: {:?}", lineno, evaluate(line, &frame));
+        println!("{}: {:?}", lineno, context.evaluate_sexp(line));
     }
 
     Ok(())
