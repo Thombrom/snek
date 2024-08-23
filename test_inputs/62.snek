@@ -1,3 +1,0 @@
-(define y 10)
-(let ((y (+ y 3))) y)
-y
