@@ -1,6 +1,8 @@
 use core::fmt;
 use std::{cell::RefCell, collections::HashMap, ops::Deref, rc::Rc};
 
+use itertools::Itertools;
+
 use crate::{error::SnekError, parser::{parser, Literal, Sexp}};
 
 type EvaluationResult<'a, 'b> = Result<SnekValue<'a, 'b>, SnekError>;
@@ -67,6 +69,10 @@ fn builtin_less<'a, 'b>(values: Vec<SnekValue<'a, 'b>>) -> EvaluationResult<'a, 
 
 fn builtin_less_eq<'a, 'b>(values: Vec<SnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
     builtin_compare(values, |a, b| a <= b)
+}
+
+fn builtin_eq<'a, 'b>(values: Vec<SnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+    builtin_compare(values, |a, b| (a - b).abs() < 1.0e-5)
 }
 
 fn builtin_list<'a, 'b>(mut values: Vec<SnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
@@ -190,6 +196,24 @@ fn builtin_filter<'a, 'b>(values: Vec<SnekValue<'a, 'b>>) -> EvaluationResult<'a
     }
 }
 
+fn builtin_reduce_impl<'a, 'b>(function: &Function<'a, 'b>, list: &SnekValue<'a, 'b>, acc: SnekValue<'a, 'b>) -> EvaluationResult<'a, 'b> {
+    match list {
+        SnekValue::Cons(Cons(None)) => Ok(acc),
+        SnekValue::Cons(Cons(Some(value))) 
+            => builtin_reduce_impl(function, &value.1, function.evaluate(vec![acc, value.0.clone()])?),
+        _ => Err(SnekError::SnekEvaluationError)
+    }
+}
+
+fn builtin_reduce<'a, 'b>(values: Vec<SnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+    if values.len() != 3 { return Err(SnekError::SnekSyntaxError); }
+
+    match &values[0] {
+        SnekValue::Function(function) => builtin_reduce_impl(function, &values[1], values[2].clone()),
+        _ => Err(SnekError::SnekEvaluationError)
+    }
+}
+
 pub fn builtin_frame<'a, 'b: 'a>() -> Rc<Frame<'a, 'b>> {
     Frame::root(HashMap::from([
         ("+", SnekValue::Function(Function::Builtin(&builtin_add))),
@@ -205,6 +229,7 @@ pub fn builtin_frame<'a, 'b: 'a>() -> Rc<Frame<'a, 'b>> {
         (">=", SnekValue::Function(Function::Builtin(&builtin_greater_eq))),
         ("<", SnekValue::Function(Function::Builtin(&builtin_less))),
         ("<=", SnekValue::Function(Function::Builtin(&builtin_less_eq))),
+        ("=?", SnekValue::Function(Function::Builtin(&builtin_eq))),
         
         ("list", SnekValue::Function(Function::Builtin(&builtin_list))),
         ("car", SnekValue::Function(Function::Builtin(&builtin_car))),
@@ -214,6 +239,7 @@ pub fn builtin_frame<'a, 'b: 'a>() -> Rc<Frame<'a, 'b>> {
         ("concat", SnekValue::Function(Function::Builtin(&builtin_concat))),
         ("map", SnekValue::Function(Function::Builtin(&builtin_map))),
         ("filter", SnekValue::Function(Function::Builtin(&builtin_filter))),
+        ("reduce", SnekValue::Function(Function::Builtin(&builtin_reduce))),
     ]))
 }
 
@@ -310,6 +336,18 @@ impl<'a, 'b> Frame<'a, 'b> {
             None => Err(SnekError::SnekNameError)
         }
     }
+
+    fn update(&self, key: &'b str, value: SnekValue<'a, 'b>) -> EvaluationResult<'a, 'b> {
+        if self.bindings.borrow().contains_key(key) {
+            self.bindings.borrow_mut().insert(key, value.clone());
+            return Ok(value)
+        } else {
+            match &self.parent {
+                Some(parent) => parent.update(key, value),
+                None => Err(SnekError::SnekNameError)
+            }
+        }
+    } 
 }
 
 #[derive(Clone)]
@@ -383,6 +421,9 @@ fn evaluate_expression<'a, 'b: 'a>(expression: &'a [Sexp<'b>], environment: &Rc<
                 "or" => return evaluate_or(&expression[1..], environment),
                 "not" => return evaluate_not(&expression[1..], environment),
                 "cons" => return evaluate_cons(&expression[1..], environment),
+                "begin" => return evaluate_begin(&expression[1..], environment),
+                "let" => return evaluate_let(&expression[1..], environment),
+                "set!" => return evaluate_set_bang(&expression[1..], environment),
                 _ => {}
             }
         },
@@ -403,6 +444,75 @@ fn sexp_list_to_identifiers<'a, 'b: 'a>(list: &'a [Sexp<'b>]) -> Result<Vec<&'b 
             Sexp::Atom(Literal::Identifier(identifier)) => Ok(*identifier),
             _ => Err(SnekError::SnekSyntaxError)
         }).collect()
+}
+
+fn evaluate_let_parameter<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: &Rc<Frame<'a, 'b>>) -> Result<(&'b str, SnekValue<'a, 'b>), SnekError> {
+    // A let parameter is a sexp of two elements, the first being an atom with the name of the parameter,
+    // and the second evalutes to a value for the parameter
+
+    if list.len() != 2 { return Err(SnekError::SnekSyntaxError); }
+
+    let name = match list[0] {
+        Sexp::Atom(Literal::Identifier(identifier)) => identifier,
+        _ => return Err(SnekError::SnekSyntaxError)
+    };
+
+    evaluate(&list[1], environment)
+        .map(|value| (name, value))
+}
+
+fn evaluate_let_parameter_list<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: &Rc<Frame<'a, 'b>>) -> Result<Vec<(&'b str, SnekValue<'a, 'b>)>, SnekError> {
+    list.into_iter().map(|sexp| {
+        match sexp { 
+            Sexp::Expression(expression) => evaluate_let_parameter(&expression, environment),
+            _ => Err(SnekError::SnekSyntaxError)
+        }
+    }).collect()
+}
+
+fn evaluate_let<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: &Rc<Frame<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+    // Let statements has two parts. The parameters and the body. The paremeters is an expression in the first
+    // element of list, which is a list of two-length sexp expressions, the first being the name (a literal),
+    // and the second being a value (to be evaluated). These are set in a new environment where the second index
+    // of list is evaluated
+
+    if list.len() != 2 { return Err(SnekError::SnekSyntaxError); }
+
+    let parameters = match &list[0] {
+        Sexp::Expression(expression) => evaluate_let_parameter_list(&expression, environment)?,
+        _ => return Err(SnekError::SnekSyntaxError)
+    };
+
+    let sub_environment = Frame::new(environment.clone());
+    for (name, value) in parameters {
+        sub_environment.insert(name, value);
+    }
+
+    evaluate(&list[1], &sub_environment)
+}
+
+fn evaluate_set_bang<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: &Rc<Frame<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+    if list.len() != 2 { return Err(SnekError::SnekSyntaxError); }
+    
+    let name = match list[0] {
+        Sexp::Atom(Literal::Identifier(name)) => name,
+        _ => return Err(SnekError::SnekSyntaxError),
+    };
+
+    let value = evaluate(&list[1], environment)?;
+    environment.update(name, value)
+}
+
+fn evaluate_begin<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: &Rc<Frame<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+    // Begin evaluates all sexps in the list and returns the result of the last evaluation
+
+    if list.len() == 0 { return Err(SnekError::SnekSyntaxError); }
+
+    Ok(list.into_iter()
+        .map(|sexp| evaluate(sexp, environment))
+        .collect::<Result<Vec<_>, _>>()?
+        .pop()
+        .unwrap())
 }
 
 fn evaluate_if<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: &Rc<Frame<'a, 'b>>) -> EvaluationResult<'a, 'b> {
