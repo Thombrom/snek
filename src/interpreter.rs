@@ -260,20 +260,6 @@ impl<'a, 'b> Cons<'a, 'b> {
     pub fn nil() -> Self {
         Self(None)
     }
-
-    pub fn car(&self) -> EvaluationResult<'a, 'b> {
-        match &self.0 {
-            Some(v) => Ok(v.0.clone()),
-            None => Err(SnekError::SnekEvaluationError)
-        }
-    }
-
-    pub fn cdr(&self) -> EvaluationResult<'a, 'b> {
-        match &self.0 {
-            Some(v) => Ok(v.1.clone()),
-            None => Err(SnekError::SnekEvaluationError)
-        }
-    }
 }
 
 // Value type that can be produced by expressions, this is
@@ -699,11 +685,18 @@ fn evaluate<'a, 'b: 'a>(sexp: &'a Sexp<'b>, environment: &Rc<Frame<'a, 'b>>) -> 
     }
 }
 
-pub struct EvaluationContext<'a, 'b> {
+/// An evaluation context that takes sexps and evaluates them to give
+/// values. 
+/// 
+/// It uses a zero-copy approach for sexps, which means the sexps must remain alive as
+/// long as the evaluation context is alive, which does pose some restrictions on the user.
+/// 
+/// If this is too much of a restriction, consider the regular evaluation context
+pub struct SexpEvaluationContext<'a, 'b> {
     frame: Rc<Frame<'a, 'b>>
 }
 
-impl<'a, 'b> EvaluationContext<'a, 'b> {
+impl<'a, 'b> SexpEvaluationContext<'a, 'b> {
     pub fn new() -> Self {
         Self {
             frame: Frame::new(builtin_frame())
@@ -713,6 +706,40 @@ impl<'a, 'b> EvaluationContext<'a, 'b> {
     pub fn evaluate_sexp(&mut self, sexp: &'b Sexp<'a>) -> Result<SnekValue, SnekError> {
         let result = evaluate(sexp, &self.frame);
         result.map(|v| v.into())
+    }
+}
+
+pub struct EvaluationContext<'a, 'b> {
+    sexps: Vec<* const Sexp<'a>>,
+    frame: Rc<Frame<'a, 'b>>,
+}
+
+impl<'a> EvaluationContext<'a, 'static> {
+    pub fn new() -> Self {
+        Self {
+            sexps: Vec::new(),
+            frame: Frame::new(builtin_frame())
+        }
+    }
+
+    pub fn evaluate_str(&mut self, input: &'a str) -> Result<SnekValue, SnekError> {
+        let sexp = parser(input)?;
+        let ptr = Box::into_raw(Box::new(sexp));
+        self.sexps.push(ptr);
+
+        // Safety:
+        // The pointer will be alive for as long as the evaluation context is alive,
+        // since we never pop from the sexps until we drop
+        evaluate(unsafe { &*ptr }, &self.frame)
+            .map(|value| value.into())
+    }
+}
+
+impl<'a, 'b> Drop for EvaluationContext<'a, 'b> {
+    fn drop(&mut self) {
+        // Safety:
+        // All pointers in the vector comes from box
+        self.sexps.drain(..).for_each(|ptr| unsafe { Box::from_raw(ptr as *mut Sexp<'a>); });
     }
 }
 
@@ -742,7 +769,7 @@ mod tests {
     }
 
     fn assert_run(testcase: usize, entries: Vec<(String, TestEvaluationResult)>) -> anyhow::Result<()> {
-        let mut evaluation_context = EvaluationContext::new();
+        let mut evaluation_context = SexpEvaluationContext::new();
         let sexps = entries
             .iter()
             .enumerate()

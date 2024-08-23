@@ -1,6 +1,6 @@
 #![feature(array_windows)]
 
-use interpreter::{builtin_frame, Frame, EvaluationContext};
+use interpreter::{builtin_frame, EvaluationContext, Frame, SexpEvaluationContext};
 use parser::parser;
 
 mod error;
@@ -16,11 +16,11 @@ fn main() -> anyhow::Result<()> {
         "(spam)",
         "(define eggs 20)",
         "(spam)",
-    ].into_iter().map(|line| parser(line)).collect::<Result<Vec<_>, _>>()?;
+    ];
 
     let mut context = EvaluationContext::new();
-    for (lineno, line) in program.iter().enumerate() {
-        println!("{}: {:?}", lineno, context.evaluate_sexp(line));
+    for (lineno, line) in program.into_iter().enumerate() {
+        println!("{}: {:?}", lineno, context.evaluate_str(line));
     }
 
     Ok(())
