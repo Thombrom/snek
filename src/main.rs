@@ -1,6 +1,6 @@
 #![feature(array_windows)]
 
-use interpreter::{builtin_frame, EvaluationContext, Frame, SexpEvaluationContext};
+use interpreter::{builtin_frame, EvaluationContext, Frame};
 use parser::parser;
 
 mod error;

@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{any::Any, cell::RefCell, collections::HashMap, rc::Rc, sync::Mutex};
 
 use itertools::Itertools;
 
@@ -15,7 +15,7 @@ fn snek_value_list_to_numbers<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>) ->
         }).collect()
 }
 
-fn builtin_add<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn builtin_add<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>, _ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     if values.len() == 0 { return Err(SnekError::SnekEvaluationError); }
 
     // We can only add integers together
@@ -23,7 +23,7 @@ fn builtin_add<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>) -> EvaluationResu
     Ok(InternalSnekValue::Number(values.into_iter().sum()))
 }
 
-fn builtin_sub<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn builtin_sub<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>, _ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     if values.len() == 0 { return Err(SnekError::SnekEvaluationError); }
 
     let values = snek_value_list_to_numbers(values)?;
@@ -31,14 +31,14 @@ fn builtin_sub<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>) -> EvaluationResu
     Ok(InternalSnekValue::Number(values[0] - values[1..].into_iter().sum::<f64>()))
 }
 
-fn builtin_mul<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn builtin_mul<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>, _ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     if values.len() == 0 { return Err(SnekError::SnekEvaluationError); }
 
     let values = snek_value_list_to_numbers(values)?;
     Ok(InternalSnekValue::Number(values.into_iter().reduce(|a, b| a * b).unwrap()))
 }
 
-fn builtin_div<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn builtin_div<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>, _ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     if values.len() == 0 { return Err(SnekError::SnekEvaluationError); }
 
     let values = snek_value_list_to_numbers(values)?;
@@ -55,27 +55,27 @@ fn builtin_compare<'a, 'b, F: Fn(&f64, &f64) -> bool>(values: Vec<InternalSnekVa
     Ok(InternalSnekValue::Boolean(builtin_compare_impl(&values, f)?))
 }
 
-fn builtin_greater<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn builtin_greater<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>, _ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     builtin_compare(values, |a, b| a > b)
 }
 
-fn builtin_greater_eq<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn builtin_greater_eq<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>, _ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     builtin_compare(values, |a, b| a >= b)
 }
 
-fn builtin_less<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn builtin_less<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>, _ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     builtin_compare(values, |a, b| a < b)
 }
 
-fn builtin_less_eq<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn builtin_less_eq<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>, _ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     builtin_compare(values, |a, b| a <= b)
 }
 
-fn builtin_eq<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn builtin_eq<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>, _ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     builtin_compare(values, |a, b| (a - b).abs() < 1.0e-5)
 }
 
-fn builtin_list<'a, 'b>(mut values: Vec<InternalSnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn builtin_list<'a, 'b>(mut values: Vec<InternalSnekValue<'a, 'b>>, ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     let mut cond = InternalSnekValue::Cons(Cons::nil());
 
     while let Some(value) = values.pop() {
@@ -85,7 +85,7 @@ fn builtin_list<'a, 'b>(mut values: Vec<InternalSnekValue<'a, 'b>>) -> Evaluatio
     Ok(cond)
 }
 
-fn builtin_car<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn builtin_car<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>, _ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     if values.len() != 1 { return Err(SnekError::SnekSyntaxError); }
 
     match &values[0] {
@@ -94,7 +94,7 @@ fn builtin_car<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>) -> EvaluationResu
     }
 }   
 
-fn builtin_cdr<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn builtin_cdr<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>, _ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     if values.len() != 1 { return Err(SnekError::SnekSyntaxError); }
 
     match &values[0] {
@@ -111,7 +111,7 @@ fn builtin_length_impl<'a, 'b>(value: &InternalSnekValue<'a, 'b>) -> Result<usiz
     }
 }
 
-fn builtin_length<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn builtin_length<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>, _ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     if values.len() != 1 { return Err(SnekError::SnekSyntaxError); }
     Ok(InternalSnekValue::Number(builtin_length_impl(&values[0])? as f64))
 }
@@ -124,7 +124,7 @@ fn builtin_elt_at_index_impl<'a, 'b>(value: &InternalSnekValue<'a, 'b>, index: u
     }
 }
 
-fn builtin_elt_at_index<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn builtin_elt_at_index<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>, _ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     if values.len() != 2 { return Err(SnekError::SnekSyntaxError); }
     match (&values[0], &values[1]) {
         (value, InternalSnekValue::Number(index)) => builtin_elt_at_index_impl(&value, index.round() as usize),
@@ -132,52 +132,52 @@ fn builtin_elt_at_index<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>) -> Evalu
     }    
 }
 
-fn builtin_concat_impl<'a, 'b>(current: &InternalSnekValue<'a, 'b>, lists: &[InternalSnekValue<'a, 'b>]) -> EvaluationResult<'a, 'b> {
+fn builtin_concat_impl<'a, 'b>(current: &InternalSnekValue<'a, 'b>, lists: &[InternalSnekValue<'a, 'b>], ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     match current {
         InternalSnekValue::Cons(Cons(None)) => {
             if lists.len() == 0 { return Ok(InternalSnekValue::Cons(Cons::nil())); }
-            builtin_concat_impl(&lists[0], &lists[1..])
+            builtin_concat_impl(&lists[0], &lists[1..], ctx)
         }
         InternalSnekValue::Cons(Cons(Some(cons))) => {
-            let cdr = builtin_concat_impl(&cons.1, lists)?;
+            let cdr = builtin_concat_impl(&cons.1, lists, ctx)?;
             Ok(InternalSnekValue::Cons(Cons::new(cons.0.clone(), cdr)))
         },
         _ => Err(SnekError::SnekEvaluationError)
     }
 }
 
-fn builtin_concat<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn builtin_concat<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>, ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     if values.len() == 0 { return Ok(InternalSnekValue::Cons(Cons::nil())); }
-    builtin_concat_impl(&values[0], &values[1..])
+    builtin_concat_impl(&values[0], &values[1..], ctx)
 }
 
-fn builtin_map_impl<'a, 'b>(function: &Function<'a, 'b>, list: &InternalSnekValue<'a, 'b>) -> EvaluationResult<'a, 'b> {
+fn builtin_map_impl<'a, 'b>(function: &Function<'a, 'b>, list: &InternalSnekValue<'a, 'b>, ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     match list {
         InternalSnekValue::Cons(Cons(None)) => Ok(list.clone()),
         InternalSnekValue::Cons(Cons(Some(value))) => {
-            let cdr = builtin_map_impl(function, &value.1)?;
-            let car = function.evaluate(vec![value.0.clone()])?;
+            let cdr = builtin_map_impl(function, &value.1, ctx)?;
+            let car = function.evaluate(vec![value.0.clone()], ctx)?;
             Ok(InternalSnekValue::Cons(Cons::new(car, cdr)))
         },
         _ => Err(SnekError::SnekEvaluationError)
     }
 }
 
-fn builtin_map<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn builtin_map<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>, ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     if values.len() != 2 { return Err(SnekError::SnekSyntaxError); }
 
     match &values[0] {
-        InternalSnekValue::Function(function) => builtin_map_impl(function, &values[1]),
+        InternalSnekValue::Function(function) => builtin_map_impl(function, &values[1], ctx),
         _ => Err(SnekError::SnekEvaluationError)
     }
 }
 
-fn builtin_filter_impl<'a, 'b>(function: &Function<'a, 'b>, list: &InternalSnekValue<'a, 'b>) -> EvaluationResult<'a, 'b> {
+fn builtin_filter_impl<'a, 'b>(function: &Function<'a, 'b>, list: &InternalSnekValue<'a, 'b>, ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     match list {
         InternalSnekValue::Cons(Cons(None)) => Ok(InternalSnekValue::Cons(Cons::nil())),
         InternalSnekValue::Cons(Cons(Some(value))) => {
-            let cdr = builtin_filter_impl(function, &value.1)?;
-            match function.evaluate(vec![value.0.clone()])? {
+            let cdr = builtin_filter_impl(function, &value.1, ctx)?;
+            match function.evaluate(vec![value.0.clone()], ctx)? {
                 InternalSnekValue::Boolean(true) => Ok(InternalSnekValue::Cons(Cons::new(value.0.clone(), cdr))),
                 InternalSnekValue::Boolean(false) => Ok(cdr),
                 _ => Err(SnekError::SnekEvaluationError)
@@ -187,34 +187,34 @@ fn builtin_filter_impl<'a, 'b>(function: &Function<'a, 'b>, list: &InternalSnekV
     }
 }
 
-fn builtin_filter<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn builtin_filter<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>, ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     if values.len() != 2 { return Err(SnekError::SnekSyntaxError); }
 
     match &values[0] {
-        InternalSnekValue::Function(function) => builtin_filter_impl(function, &values[1]),
+        InternalSnekValue::Function(function) => builtin_filter_impl(function, &values[1], ctx),
         _ => Err(SnekError::SnekEvaluationError)
     }
 }
 
-fn builtin_reduce_impl<'a, 'b>(function: &Function<'a, 'b>, list: &InternalSnekValue<'a, 'b>, acc: InternalSnekValue<'a, 'b>) -> EvaluationResult<'a, 'b> {
+fn builtin_reduce_impl<'a, 'b>(function: &Function<'a, 'b>, list: &InternalSnekValue<'a, 'b>, acc: InternalSnekValue<'a, 'b>, ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     match list {
         InternalSnekValue::Cons(Cons(None)) => Ok(acc),
         InternalSnekValue::Cons(Cons(Some(value))) 
-            => builtin_reduce_impl(function, &value.1, function.evaluate(vec![acc, value.0.clone()])?),
+            => builtin_reduce_impl(function, &value.1, function.evaluate(vec![acc, value.0.clone()], ctx)?, ctx),
         _ => Err(SnekError::SnekEvaluationError)
     }
 }
 
-fn builtin_reduce<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn builtin_reduce<'a, 'b>(values: Vec<InternalSnekValue<'a, 'b>>, ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     if values.len() != 3 { return Err(SnekError::SnekSyntaxError); }
 
     match &values[0] {
-        InternalSnekValue::Function(function) => builtin_reduce_impl(function, &values[1], values[2].clone()),
+        InternalSnekValue::Function(function) => builtin_reduce_impl(function, &values[1], values[2].clone(), ctx),
         _ => Err(SnekError::SnekEvaluationError)
     }
 }
 
-pub fn builtin_frame<'a, 'b: 'a>() -> Rc<Frame<'a, 'b>> {
+pub fn builtin_frame<'a, 'b: 'a>(ctx: &mut AllocationContext) -> *const Frame<'a, 'b> {
     Frame::root(HashMap::from([
         ("+", InternalSnekValue::Function(Function::Builtin(&builtin_add))),
         ("-", InternalSnekValue::Function(Function::Builtin(&builtin_sub))),
@@ -240,7 +240,7 @@ pub fn builtin_frame<'a, 'b: 'a>() -> Rc<Frame<'a, 'b>> {
         ("map", InternalSnekValue::Function(Function::Builtin(&builtin_map))),
         ("filter", InternalSnekValue::Function(Function::Builtin(&builtin_filter))),
         ("reduce", InternalSnekValue::Function(Function::Builtin(&builtin_reduce))),
-    ]))
+    ]), ctx)
 }
 
 #[derive(Clone)]
@@ -342,45 +342,52 @@ impl<'a, 'b> From<InternalSnekValue<'a, 'b>> for SnekValue {
 #[derive(Debug, Clone)]
 pub struct Frame<'a, 'b: 'a> {
     bindings: RefCell<HashMap<&'b str, InternalSnekValue<'a, 'b>>>,
-    parent: Option<Rc<Frame<'a, 'b>>>,
+    parent: Option<* const Frame<'a, 'b>>,
+}
+
+impl<'a, 'b> Drop for Frame<'a, 'b> {
+    fn drop(&mut self) {
+        drop(&mut self.bindings);
+        drop(&mut self.parent);
+    }
 }
 
 impl<'a, 'b> Frame<'a, 'b> {
-    fn root(bindings: HashMap<&'b str, InternalSnekValue<'a, 'b>>) -> Rc<Self> {
-        Rc::new(Self {
-                    parent: None,
-                    bindings: RefCell::from(bindings)
-                })
+    fn root(bindings: HashMap<&'b str, InternalSnekValue<'a, 'b>>, ctx: &mut AllocationContext) -> *const Self {
+        ctx.as_ptr(Self {
+            parent: None,
+            bindings: RefCell::from(bindings)
+        })
     }
 
-    pub fn new(parent: Rc<Frame<'a, 'b>>) -> Rc<Self> {
-        Rc::new(Self {
-                    parent: Some(parent),
-                    bindings: RefCell::new(HashMap::new())
-                })
+    pub fn new(parent: *const Frame<'a, 'b>, ctx: &mut AllocationContext) -> *const Self {
+        ctx.as_ptr(Self {
+            parent: Some(parent),
+            bindings: RefCell::new(HashMap::new())
+        })
     }
 
-    fn insert(&self, key: &'b str, value: InternalSnekValue<'a, 'b>) {
-        self.bindings.borrow_mut().insert(key, value);
+    fn insert(self_: *const Self, key: &'b str, value: InternalSnekValue<'a, 'b>) {
+        unsafe { &*self_ }.bindings.borrow_mut().insert(key, value);
     }
 
-    fn get(&self, key: &'b str) -> EvaluationResult<'a, 'b> {
-        if let Some(value) = self.bindings.borrow_mut().get(key) {
+    fn get(self_: *const Self, key: &'b str) -> EvaluationResult<'a, 'b> {
+        if let Some(value) = unsafe { &*self_ }.bindings.borrow_mut().get(key) {
             return Ok(value.clone())
         }
-        match self.parent.as_ref() {
-            Some(parent) => parent.get(key),
+        match unsafe { &*self_ }.parent.as_ref() {
+            Some(parent) => Self::get(*parent, key),
             None => Err(SnekError::SnekNameError)
         }
     }
 
-    fn update(&self, key: &'b str, value: InternalSnekValue<'a, 'b>) -> EvaluationResult<'a, 'b> {
-        if self.bindings.borrow().contains_key(key) {
-            self.bindings.borrow_mut().insert(key, value.clone());
+    fn update(self_: *const Self, key: &'b str, value: InternalSnekValue<'a, 'b>) -> EvaluationResult<'a, 'b> {
+        if unsafe { &*self_ }.bindings.borrow().contains_key(key) {
+            unsafe { &*self_ }.bindings.borrow_mut().insert(key, value.clone());
             return Ok(value)
         } else {
-            match &self.parent {
-                Some(parent) => parent.update(key, value),
+            match unsafe { &*self_ }.parent {
+                Some(parent) => Self::update(parent, key, value),
                 None => Err(SnekError::SnekNameError)
             }
         }
@@ -389,7 +396,7 @@ impl<'a, 'b> Frame<'a, 'b> {
 
 #[derive(Clone)]
 enum Function<'a, 'b: 'a> {
-    Builtin(&'b dyn Fn(Vec<InternalSnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b>),
+    Builtin(&'b dyn Fn(Vec<InternalSnekValue<'a, 'b>>, &mut AllocationContext) -> EvaluationResult<'a, 'b>),
     Lisp(LispFunction<'a, 'b>)
 }
 
@@ -403,10 +410,10 @@ impl<'a, 'b> fmt::Debug for Function<'a, 'b> {
 }
 
 impl<'a, 'b: 'a> Function<'a, 'b> {
-    fn evaluate(&self, values: Vec<InternalSnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+    fn evaluate(&self, values: Vec<InternalSnekValue<'a, 'b>>, ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
         match self {
-            Self::Builtin(builtin) => builtin(values),
-            Self::Lisp(lisp_function) => lisp_function.evaluate(values)
+            Self::Builtin(builtin) => builtin(values, ctx),
+            Self::Lisp(lisp_function) => lisp_function.evaluate(values, ctx)
         }
     }
 }
@@ -415,34 +422,34 @@ impl<'a, 'b: 'a> Function<'a, 'b> {
 struct LispFunction<'a, 'b: 'a> {
     parameters: Vec<&'b str>,
     expression: &'a Sexp<'b>,
-    environment: Rc<Frame<'a, 'b>>
+    environment: *const Frame<'a, 'b>
 }
 
 impl<'a, 'b: 'a> LispFunction<'a, 'b> {
-    fn evaluate(&self, values: Vec<InternalSnekValue<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+    fn evaluate(&self, values: Vec<InternalSnekValue<'a, 'b>>, ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
         // To evaluate a lisp function, it must receive the correct number of variables
         if values.len() != self.parameters.len() { return Err(SnekError::SnekEvaluationError) }
 
-        let environment = Frame::new(self.environment.clone());
+        let environment = Frame::new(self.environment.clone(), ctx);
         for (variable, value) in self.parameters.iter().zip(values.into_iter()) {
-            environment.insert(variable, value);
+            Frame::insert(environment, variable, value);
         }
 
-        evaluate(self.expression, &environment)
+        evaluate(self.expression, environment, ctx)
     }
 }
 
-fn evaluate_atom<'a, 'b>(literal: &'a Literal<'b>, environment: &Rc<Frame<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn evaluate_atom<'a, 'b>(literal: &'a Literal<'b>, environment: *const Frame<'a, 'b>) -> EvaluationResult<'a, 'b> {
     // An atom is interpreted by looking up the identifier, if it is an identifier, or returning the numerical value
     // it represents
 
     match literal {
-        Literal::Identifier(identifier) => environment.get(identifier),
+        Literal::Identifier(identifier) => Frame::get(environment, identifier),
         Literal::Number(number) => Ok(InternalSnekValue::Number(*number))
     }
 }
 
-fn evaluate_expression<'a, 'b: 'a>(expression: &'a [Sexp<'b>], environment: &Rc<Frame<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn evaluate_expression<'a, 'b: 'a>(expression: &'a [Sexp<'b>], environment: *const Frame<'a, 'b>, ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     // To interpret an expression, all values in the expression are interpreted in the environment. The first value
     // must be a function, which is then called with the remainder of the arguments. 
     // There are a few special function exceptions that are checked first
@@ -451,28 +458,28 @@ fn evaluate_expression<'a, 'b: 'a>(expression: &'a [Sexp<'b>], environment: &Rc<
     match expression[0] {
         Sexp::Atom(Literal::Identifier(identifier)) => {
             match identifier {
-                "lambda" => return evaluate_lambda(&expression[1..], environment),
-                "define" => return evaluate_define(&expression[1..], environment),
-                "if" => return evaluate_if(&expression[1..], environment),
-                "and" => return evaluate_and(&expression[1..], environment),
-                "or" => return evaluate_or(&expression[1..], environment),
-                "not" => return evaluate_not(&expression[1..], environment),
-                "cons" => return evaluate_cons(&expression[1..], environment),
-                "begin" => return evaluate_begin(&expression[1..], environment),
-                "let" => return evaluate_let(&expression[1..], environment),
-                "set!" => return evaluate_set_bang(&expression[1..], environment),
+                "lambda" => return evaluate_lambda(&expression[1..], environment, ctx),
+                "define" => return evaluate_define(&expression[1..], environment, ctx),
+                "if" => return evaluate_if(&expression[1..], environment, ctx),
+                "and" => return evaluate_and(&expression[1..], environment, ctx),
+                "or" => return evaluate_or(&expression[1..], environment, ctx),
+                "not" => return evaluate_not(&expression[1..], environment, ctx),
+                "cons" => return evaluate_cons(&expression[1..], environment, ctx),
+                "begin" => return evaluate_begin(&expression[1..], environment, ctx),
+                "let" => return evaluate_let(&expression[1..], environment, ctx),
+                "set!" => return evaluate_set_bang(&expression[1..], environment, ctx),
                 _ => {}
             }
         },
         _ => {}
     }
 
-    let function = match evaluate(&expression[0], environment)? {
+    let function = match evaluate(&expression[0], environment, ctx)? {
         InternalSnekValue::Function(function) => function,
         _ => return Err(SnekError::SnekEvaluationError)
     };
 
-    function.evaluate(evaulate_list(&expression[1..], environment)?)
+    function.evaluate(evaulate_list(&expression[1..], environment, ctx)?, ctx)
 }
 
 fn sexp_list_to_identifiers<'a, 'b: 'a>(list: &'a [Sexp<'b>]) -> Result<Vec<&'b str>, SnekError> {
@@ -483,7 +490,7 @@ fn sexp_list_to_identifiers<'a, 'b: 'a>(list: &'a [Sexp<'b>]) -> Result<Vec<&'b 
         }).collect()
 }
 
-fn evaluate_let_parameter<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: &Rc<Frame<'a, 'b>>) -> Result<(&'b str, InternalSnekValue<'a, 'b>), SnekError> {
+fn evaluate_let_parameter<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: *const Frame<'a, 'b>, ctx: &mut AllocationContext) -> Result<(&'b str, InternalSnekValue<'a, 'b>), SnekError> {
     // A let parameter is a sexp of two elements, the first being an atom with the name of the parameter,
     // and the second evalutes to a value for the parameter
 
@@ -494,20 +501,20 @@ fn evaluate_let_parameter<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: &Rc<Fra
         _ => return Err(SnekError::SnekSyntaxError)
     };
 
-    evaluate(&list[1], environment)
+    evaluate(&list[1], environment, ctx)
         .map(|value| (name, value))
 }
 
-fn evaluate_let_parameter_list<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: &Rc<Frame<'a, 'b>>) -> Result<Vec<(&'b str, InternalSnekValue<'a, 'b>)>, SnekError> {
+fn evaluate_let_parameter_list<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: *const Frame<'a, 'b>, ctx: &mut AllocationContext) -> Result<Vec<(&'b str, InternalSnekValue<'a, 'b>)>, SnekError> {
     list.into_iter().map(|sexp| {
         match sexp { 
-            Sexp::Expression(expression) => evaluate_let_parameter(&expression, environment),
+            Sexp::Expression(expression) => evaluate_let_parameter(&expression, environment, ctx),
             _ => Err(SnekError::SnekSyntaxError)
         }
     }).collect()
 }
 
-fn evaluate_let<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: &Rc<Frame<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn evaluate_let<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: *const Frame<'a, 'b>, ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     // Let statements has two parts. The parameters and the body. The paremeters is an expression in the first
     // element of list, which is a list of two-length sexp expressions, the first being the name (a literal),
     // and the second being a value (to be evaluated). These are set in a new environment where the second index
@@ -516,19 +523,19 @@ fn evaluate_let<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: &Rc<Frame<'a, 'b>
     if list.len() != 2 { return Err(SnekError::SnekSyntaxError); }
 
     let parameters = match &list[0] {
-        Sexp::Expression(expression) => evaluate_let_parameter_list(&expression, environment)?,
+        Sexp::Expression(expression) => evaluate_let_parameter_list(&expression, environment, ctx)?,
         _ => return Err(SnekError::SnekSyntaxError)
     };
 
-    let sub_environment = Frame::new(environment.clone());
+    let sub_environment = Frame::new(environment.clone(), ctx);
     for (name, value) in parameters {
-        sub_environment.insert(name, value);
+        Frame::insert(sub_environment, name, value);
     }
 
-    evaluate(&list[1], &sub_environment)
+    evaluate(&list[1], sub_environment, ctx)
 }
 
-fn evaluate_set_bang<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: &Rc<Frame<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn evaluate_set_bang<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: *const Frame<'a, 'b>, ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     if list.len() != 2 { return Err(SnekError::SnekSyntaxError); }
     
     let name = match list[0] {
@@ -536,42 +543,42 @@ fn evaluate_set_bang<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: &Rc<Frame<'a
         _ => return Err(SnekError::SnekSyntaxError),
     };
 
-    let value = evaluate(&list[1], environment)?;
-    environment.update(name, value)
+    let value = evaluate(&list[1], environment, ctx)?;
+    Frame::update(environment, name, value)
 }
 
-fn evaluate_begin<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: &Rc<Frame<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn evaluate_begin<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: *const Frame<'a, 'b>, ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     // Begin evaluates all sexps in the list and returns the result of the last evaluation
 
     if list.len() == 0 { return Err(SnekError::SnekSyntaxError); }
 
     Ok(list.into_iter()
-        .map(|sexp| evaluate(sexp, environment))
+        .map(|sexp| evaluate(sexp, environment, ctx))
         .collect::<Result<Vec<_>, _>>()?
         .pop()
         .unwrap())
 }
 
-fn evaluate_if<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: &Rc<Frame<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn evaluate_if<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: *const Frame<'a, 'b>, ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     // An if expression evaluates the first value, and if it is true, evaluates the second value, if it is false,
     // evalutes the third value
 
     if list.len() != 3 { return Err(SnekError::SnekEvaluationError); }
 
-    match evaluate(&list[0], environment)? {
-        InternalSnekValue::Boolean(true) => evaluate(&list[1], environment),
-        InternalSnekValue::Boolean(false) => evaluate(&list[2], environment),
+    match evaluate(&list[0], environment, ctx)? {
+        InternalSnekValue::Boolean(true) => evaluate(&list[1], environment, ctx),
+        InternalSnekValue::Boolean(false) => evaluate(&list[2], environment, ctx),
         _ => Err(SnekError::SnekEvaluationError)
     }
 }
 
-fn evaluate_and<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: &Rc<Frame<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn evaluate_and<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: *const Frame<'a, 'b>, ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     // Evalutes an and-expression. If all values in the expression evalutes to true, it returns true, 
     // but if a single value evalutes to false, it returns false. It is an error to have an expression evaluate
     // to a non-boolean value
 
     for expression in list {
-        match evaluate(expression, environment)? 
+        match evaluate(expression, environment, ctx)? 
         { 
             InternalSnekValue::Boolean(false) => return Ok(InternalSnekValue::Boolean(false)),
             InternalSnekValue::Boolean(true) => {},
@@ -582,13 +589,13 @@ fn evaluate_and<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: &Rc<Frame<'a, 'b>
     Ok(InternalSnekValue::Boolean(true))
 }
 
-fn evaluate_or<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: &Rc<Frame<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn evaluate_or<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: *const Frame<'a, 'b>, ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     // Evalutes an or-expression. If all values in the expression evalutes to false, it returns false, 
     // but if a single value evalutes to true, it returns true. It is an error to have an expression evaluate
     // to a non-boolean value
 
     for expression in list {
-        match evaluate(expression, environment)? 
+        match evaluate(expression, environment, ctx)? 
         { 
             InternalSnekValue::Boolean(true) => return Ok(InternalSnekValue::Boolean(true)),
             InternalSnekValue::Boolean(false) => {},
@@ -599,17 +606,17 @@ fn evaluate_or<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: &Rc<Frame<'a, 'b>>
     Ok(InternalSnekValue::Boolean(false))
 }
 
-fn evaluate_not<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: &Rc<Frame<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn evaluate_not<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: *const Frame<'a, 'b>, ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     // Evalutes a not-expression. It has a single parameter which should evalute to a boolean expression
 
     if list.len() != 1 { return Err(SnekError::SnekSyntaxError); }
-    match evaluate(&list[0], environment)? {
+    match evaluate(&list[0], environment, ctx)? {
         InternalSnekValue::Boolean(value) => Ok(InternalSnekValue::Boolean(!value)),
         _ => Err(SnekError::SnekEvaluationError)
     }
 }
 
-fn evaluate_define<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: &Rc<Frame<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn evaluate_define<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: *const Frame<'a, 'b>, ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     // A define can be either a shorthand lambda or an instruction to associate a variable
     // with a value. 
     //
@@ -622,8 +629,8 @@ fn evaluate_define<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: &Rc<Frame<'a, 
 
     let parameter_expression = match &list[0] {
         Sexp::Atom(Literal::Identifier(key)) => {
-            let value = evaluate(&list[1], environment)?;
-            environment.insert(key, value.clone());
+            let value = evaluate(&list[1], environment, ctx)?;
+            Frame::insert(environment, key, value.clone());
             return Ok(value)
         },
         Sexp::Expression(expression) => expression,
@@ -640,11 +647,11 @@ fn evaluate_define<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: &Rc<Frame<'a, 
         environment: environment.clone()
     }));
 
-    environment.insert(name[0], function.clone());
+    Frame::insert(environment, name[0], function.clone());
     Ok(function)    
 }
 
-fn evaluate_lambda<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: &Rc<Frame<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn evaluate_lambda<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: *const Frame<'a, 'b>, ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     // A lambda is a function declaration. The list must have two elements, the first being an expression with all
     // literal atoms in them, and the second element is the body of the function
 
@@ -662,26 +669,26 @@ fn evaluate_lambda<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: &Rc<Frame<'a, 
     })))
 }
 
-fn evaluate_cons<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: &Rc<Frame<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn evaluate_cons<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: *const Frame<'a, 'b>, ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     // A cons expression builds a cons cell of the two parameters
 
     if list.len() != 2 { return Err(SnekError::SnekSyntaxError); }
     Ok(InternalSnekValue::Cons(Cons::new(
-        evaluate(&list[0], environment)?,
-        evaluate(&list[1], environment)?
+        evaluate(&list[0], environment, ctx)?,
+        evaluate(&list[1], environment, ctx)?
     )))
 }
 
-fn evaulate_list<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: &Rc<Frame<'a, 'b>>) -> Result<Vec<InternalSnekValue<'a, 'b>>, SnekError> {
+fn evaulate_list<'a, 'b: 'a>(list: &'a [Sexp<'b>], environment: *const Frame<'a, 'b>, ctx: &mut AllocationContext) -> Result<Vec<InternalSnekValue<'a, 'b>>, SnekError> {
     list.into_iter()
-        .map(|sexp| evaluate(sexp, environment))
+        .map(|sexp| evaluate(sexp, environment, ctx))
         .collect::<Result<Vec<InternalSnekValue<'a, 'b>>, SnekError>>()
 }
 
-fn evaluate<'a, 'b: 'a>(sexp: &'a Sexp<'b>, environment: &Rc<Frame<'a, 'b>>) -> EvaluationResult<'a, 'b> {
+fn evaluate<'a, 'b: 'a>(sexp: &'a Sexp<'b>, environment: *const Frame<'a, 'b>, ctx: &mut AllocationContext) -> EvaluationResult<'a, 'b> {
     match sexp {
         Sexp::Atom(atom) => evaluate_atom(atom, environment),
-        Sexp::Expression(expression) => evaluate_expression(expression, environment)
+        Sexp::Expression(expression) => evaluate_expression(expression, environment, ctx)
     }
 }
 
@@ -692,33 +699,72 @@ fn evaluate<'a, 'b: 'a>(sexp: &'a Sexp<'b>, environment: &Rc<Frame<'a, 'b>>) -> 
 /// long as the evaluation context is alive, which does pose some restrictions on the user.
 /// 
 /// If this is too much of a restriction, consider the regular evaluation context
-pub struct SexpEvaluationContext<'a, 'b> {
-    frame: Rc<Frame<'a, 'b>>
+pub struct BorrowedEvaluationContext<'a, 'b> {
+    allocations: AllocationContext,
+    frame: *const Frame<'a, 'b>
 }
 
-impl<'a, 'b> SexpEvaluationContext<'a, 'b> {
+pub struct AllocationContext {
+    allocations: Vec<*const dyn Drop> 
+}
+
+impl AllocationContext {
     pub fn new() -> Self {
+        Self { allocations: Vec::new() }
+    }
+
+    pub fn as_ptr<T: Drop>(&mut self, value: T) -> *const T {
+        let ptr = Box::into_raw(Box::new(value));
+        self.allocations.push(ptr as *const dyn Drop);
+        ptr
+    }
+
+    pub unsafe fn drop(&mut self) {
+        // println!("Dropping {} allocation", self.allocations.len());
+        self.allocations.drain(..).for_each(|ptr| {
+            drop(unsafe { Box::from_raw(ptr as *mut dyn Drop) })
+        })
+    }
+}
+
+impl<'a, 'b> BorrowedEvaluationContext<'a, 'b> {
+    pub fn new() -> Self {
+        let mut ctx = AllocationContext::new();
+        let frame = Frame::new(builtin_frame(&mut ctx), &mut ctx);
+
         Self {
-            frame: Frame::new(builtin_frame())
+            allocations: ctx,
+            frame
         }
     }
 
     pub fn evaluate_sexp(&mut self, sexp: &'b Sexp<'a>) -> Result<SnekValue, SnekError> {
-        let result = evaluate(sexp, &self.frame);
+        let result = evaluate(sexp, self.frame, &mut self.allocations);
         result.map(|v| v.into())
     }
 }
 
+impl<'a, 'b> Drop for BorrowedEvaluationContext<'a, 'b> {
+    fn drop(&mut self) {
+        unsafe { self.allocations.drop() }
+    }
+}
+
 pub struct EvaluationContext<'a, 'b> {
+    allocations: AllocationContext,
     sexps: Vec<* const Sexp<'a>>,
-    frame: Rc<Frame<'a, 'b>>,
+    frame: *const Frame<'a, 'b>,
 }
 
 impl<'a, 'b> EvaluationContext<'a, 'b> {
     pub fn new() -> Self {
+        let mut ctx = AllocationContext::new();
+        let frame = Frame::new(builtin_frame(&mut ctx), &mut ctx);
+
         Self {
+            allocations: ctx,
             sexps: Vec::new(),
-            frame: Frame::new(builtin_frame())
+            frame: frame
         }
     }
 
@@ -730,7 +776,7 @@ impl<'a, 'b> EvaluationContext<'a, 'b> {
         // Safety:
         // The pointer will be alive for as long as the evaluation context is alive,
         // since we never pop from the sexps until we drop
-        evaluate(unsafe { &*ptr }, &self.frame)
+        evaluate(unsafe { &*ptr }, self.frame, &mut self.allocations)
             .map(|value| value.into())
     }
 }
@@ -740,6 +786,7 @@ impl<'a, 'b> Drop for EvaluationContext<'a, 'b> {
         // Safety:
         // All pointers in the vector comes from box
         self.sexps.drain(..).for_each(|ptr| unsafe { drop(Box::from_raw(ptr as *mut Sexp<'a>)); });
+        unsafe { self.allocations.drop() }
     }
 }
 
