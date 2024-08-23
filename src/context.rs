@@ -1,4 +1,4 @@
-use crate::{builtin::builtin_frame, error::SnekError, interpreter::{evaluate, Frame, SnekValue}, parser::{parser, Sexp}};
+use crate::{builtin::builtin_frame, error::SnekError, interpreter::{evaluate, Frame, SnekValue}, parser::{parse, Sexp}};
 
 
 /// An evaluation context that takes sexps and evaluates them to give
@@ -80,7 +80,7 @@ impl<'a, 'b> EvaluationContext<'a, 'b> {
     }
 
     pub fn evaluate_str(&mut self, input: &'a str) -> Result<SnekValue, SnekError> {
-        let sexp = parser(input)?;
+        let sexp = parse(input)?;
         let ptr = Box::into_raw(Box::new(sexp));
         self.sexps.push(ptr);
 

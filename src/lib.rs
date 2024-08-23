@@ -11,4 +11,4 @@ mod test_utils;
 pub use error::SnekError;
 pub use context::{EvaluationContext, BorrowedEvaluationContext};
 pub use interpreter::SnekValue;
-pub use parser::Sexp;
+pub use parser::{parse, Sexp};

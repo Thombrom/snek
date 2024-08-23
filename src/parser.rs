@@ -141,7 +141,7 @@ fn parse_sexp<'a, 'b: 'a>(tokens: &'a[Token<'b>]) -> ParseResult<(&'a [Token<'b>
     )(tokens)
 }
 
-pub fn parser<'a>(input: &'a str) -> ParseResult<Sexp<'a>> {
+pub fn parse<'a>(input: &'a str) -> ParseResult<Sexp<'a>> {
     let tokens = lexer(input)?;
 
     let (tokens, sexp) = parse_sexp(&tokens)?;
@@ -206,7 +206,7 @@ mod tests {
     use super::*;
 
     fn assert_can_parse(testcase: (usize, usize), input: String, expected_result: Result<TestOutput, SnekError>) -> anyhow::Result<()> {
-        let parse_result = parser(&input);
+        let parse_result = parse(&input);
         match (parse_result, expected_result) {
             (Ok(result), Err(expected @ SnekError::SnekSyntaxError)) => bail!("Testcase {}:{} - Expected {:?} but got {:?}", testcase.0, testcase.1, expected, result), 
             (Err(result), Ok(expected)) => bail!("Testcase {}:{} - Expected {:?} but got {:?}", testcase.0, testcase.1, expected, result), 
