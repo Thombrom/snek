@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{cell::RefCell, collections::HashMap, ops::Deref, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use itertools::Itertools;
 
@@ -714,7 +714,7 @@ pub struct EvaluationContext<'a, 'b> {
     frame: Rc<Frame<'a, 'b>>,
 }
 
-impl<'a> EvaluationContext<'a, 'static> {
+impl<'a, 'b> EvaluationContext<'a, 'b> {
     pub fn new() -> Self {
         Self {
             sexps: Vec::new(),
@@ -739,14 +739,13 @@ impl<'a, 'b> Drop for EvaluationContext<'a, 'b> {
     fn drop(&mut self) {
         // Safety:
         // All pointers in the vector comes from box
-        self.sexps.drain(..).for_each(|ptr| unsafe { Box::from_raw(ptr as *mut Sexp<'a>); });
+        self.sexps.drain(..).for_each(|ptr| unsafe { drop(Box::from_raw(ptr as *mut Sexp<'a>)); });
     }
 }
 
 #[cfg(test)]
 mod tests {
     use anyhow::bail;
-    use itertools::Itertools;
 
     use crate::test_utils::{all_testcases, load_test_pair, TestEvaluationResult, TestOutput};
 
@@ -768,21 +767,14 @@ mod tests {
         }
     }
 
-    fn assert_run(testcase: usize, entries: Vec<(String, TestEvaluationResult)>) -> anyhow::Result<()> {
-        let mut evaluation_context = SexpEvaluationContext::new();
-        let sexps = entries
-            .iter()
-            .enumerate()
-            .filter_map(|(line_no, (source, result))| {
-                // Parser testing is done separately
-                parser(&source).ok().map(move |sexp| (line_no, source, sexp, result.clone().into()))
-            })
-            .collect_vec();
+    fn assert_run(testcase: usize, entries: &[(String, TestEvaluationResult)]) -> anyhow::Result<()> {
+        let mut evaluation_context = EvaluationContext::new();
+        for (lineno, (source, expected)) in entries.iter().enumerate() {
+            let result = evaluation_context.evaluate_str(source.as_str());
+            let expected: Result<_, _> = expected.clone().into();
 
-        for (lineno, source, sexp, expected) in &sexps {
-            let result = evaluation_context.evaluate_sexp(sexp);
             println!("{}:\n{:?}", source, result);
-            match (&result, expected) {
+            match (&result, &expected) {
                 (Ok(a), Ok(b)) => assert!(compare(a, b), "Testcase({}, {}): Got {:?}, expected {:?}", testcase, lineno, result, expected),
                 (Err(result), Err(expected)) 
                     => assert_eq!(result, expected, "Testcase({}, {}): Got {:?}, expected {:?}", testcase, lineno, result, expected),
@@ -798,7 +790,7 @@ mod tests {
         for testcase in all_testcases() {
             println!("Running testcase {}", testcase);
             let entries = load_test_pair(testcase)?;
-            assert_run(testcase, entries)?;
+            assert_run(testcase, &entries)?;
         }
 
         Ok(())

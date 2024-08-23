@@ -1,4 +1,4 @@
-use logos::{Lexer, Logos};
+use logos::Logos;
 
 use crate::error::SnekError;
 
