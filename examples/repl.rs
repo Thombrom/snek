@@ -13,18 +13,10 @@ async fn main() {
     let mut lines = io::BufReader::new(io::stdin()).lines();
     let mut stdout = io::stdout();
     
-    // We need to keep the lines around due to the fact that we 
-    // borrow the strings in the input in the context
-    let mut storage = AllocationContext::new();
-
     while let Ok(Some(line)) = query(&mut stdout, &mut lines).await {
-        let ptr = storage.as_ptr(line);
-
-        match context.evaluate_str(unsafe { &*ptr }) {
+        match context.evaluate_string(line) {
             Ok(value) => println!("{}", value),
             Err(err) => println!("Error: {}", err),
         }
     }
-
-    unsafe { storage.drop(); }
 }

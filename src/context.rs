@@ -89,6 +89,13 @@ impl<'a, 'b> OwnedEvaluationContext<'a, 'b> {
         evaluate(unsafe { &*ptr }, self.frame, &mut self.allocations)
             .map(|value| value.into())
     }
+
+    // TODO: Define trait that will allow us to accept &str and String in 
+    // the same method
+    pub fn evaluate_string(&mut self, input: String) -> Result<SnekValue, SnekError> {
+        let string_ref = self.allocations.as_ptr(input);
+        self.evaluate_str(unsafe { &*string_ref }.as_str())
+    }
 }
 
 impl<'a, 'b> Drop for OwnedEvaluationContext<'a, 'b> {
