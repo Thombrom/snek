@@ -464,7 +464,7 @@ pub(crate) fn evaluate<'a, 'b: 'a>(sexp: &'a Sexp<'b>, environment: *const Frame
 mod tests {
     use anyhow::bail;
 
-    use crate::{context::EvaluationContext, test_utils::{all_testcases, load_test_pair, TestEvaluationResult, TestOutput}};
+    use crate::{context::OwnedEvaluationContext, test_utils::{all_testcases, load_test_pair, TestEvaluationResult, TestOutput}};
 
     use super::*;
 
@@ -485,7 +485,7 @@ mod tests {
     }
 
     fn assert_run(testcase: usize, entries: &[(String, TestEvaluationResult)]) -> anyhow::Result<()> {
-        let mut evaluation_context = EvaluationContext::new();
+        let mut evaluation_context = OwnedEvaluationContext::new();
         for (lineno, (source, expected)) in entries.iter().enumerate() {
             let result = evaluation_context.evaluate_str(source.as_str());
             let expected: Result<_, _> = expected.clone().into();

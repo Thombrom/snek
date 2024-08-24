@@ -1,4 +1,4 @@
-use snek::EvaluationContext;
+use snek::OwnedEvaluationContext;
 
 fn main() {
     let program = vec![
@@ -8,7 +8,7 @@ fn main() {
         "(spam)",
     ];
 
-    let mut context = EvaluationContext::new();
+    let mut context = OwnedEvaluationContext::new();
     for source in program {
         match context.evaluate_str(source) {
             Ok(value) => println!("{}: {}", source, value),

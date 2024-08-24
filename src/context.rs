@@ -14,8 +14,7 @@ pub struct BorrowedEvaluationContext<'a, 'b> {
 }
 
 pub struct AllocationContext {
-    #[allow(dyn_drop)]
-    allocations: Vec<*const dyn Drop> 
+    allocations: Vec<*const ()> 
 }
 
 impl AllocationContext {
@@ -24,16 +23,16 @@ impl AllocationContext {
     }
 
     #[allow(dyn_drop)]
-    pub fn as_ptr<T: Drop>(&mut self, value: T) -> *const T {
+    pub fn as_ptr<T>(&mut self, value: T) -> *const T {
         let ptr = Box::into_raw(Box::new(value));
-        self.allocations.push(ptr as *const dyn Drop);
+        self.allocations.push(ptr as *const ());
         ptr
     }
 
     #[allow(dyn_drop)]
     pub unsafe fn drop(&mut self) {
         self.allocations.drain(..).for_each(|ptr| {
-            drop(unsafe { Box::from_raw(ptr as *mut dyn Drop) })
+            drop(unsafe { Box::from_raw(ptr as *mut ()) })
         })
     }
 }
@@ -61,13 +60,13 @@ impl<'a, 'b> Drop for BorrowedEvaluationContext<'a, 'b> {
     }
 }
 
-pub struct EvaluationContext<'a, 'b> {
+pub struct OwnedEvaluationContext<'a, 'b> {
     allocations: AllocationContext,
     sexps: Vec<* const Sexp<'a>>,
     frame: *const Frame<'a, 'b>,
 }
 
-impl<'a, 'b> EvaluationContext<'a, 'b> {
+impl<'a, 'b> OwnedEvaluationContext<'a, 'b> {
     pub fn new() -> Self {
         let mut ctx = AllocationContext::new();
         let frame = Frame::new(builtin_frame(&mut ctx), &mut ctx);
@@ -92,7 +91,7 @@ impl<'a, 'b> EvaluationContext<'a, 'b> {
     }
 }
 
-impl<'a, 'b> Drop for EvaluationContext<'a, 'b> {
+impl<'a, 'b> Drop for OwnedEvaluationContext<'a, 'b> {
     fn drop(&mut self) {
         // Safety:
         // All pointers in the vector comes from box
