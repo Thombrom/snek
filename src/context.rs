@@ -1,3 +1,5 @@
+use std::borrow::Borrow;
+
 use crate::{builtin::builtin_frame, error::SnekError, interpreter::{evaluate, Frame, SnekValue}, parser::{parse, Sexp}};
 
 
@@ -78,6 +80,15 @@ impl<'a, 'b> OwnedEvaluationContext<'a, 'b> {
         }
     }
 
+    pub fn evaluate<T>(&mut self, input: T) -> Result<SnekValue, SnekError> 
+    where 
+        T: Borrow<str> + 'b
+    {
+        let t_ref = self.allocations.as_ptr(input);
+        let str_ref = unsafe { &*t_ref as &T };
+        self.evaluate_str(str_ref.borrow())
+    }
+
     pub fn evaluate_str(&mut self, input: &'a str) -> Result<SnekValue, SnekError> {
         let sexp = parse(input)?;
         let ptr = Box::into_raw(Box::new(sexp));
@@ -88,13 +99,6 @@ impl<'a, 'b> OwnedEvaluationContext<'a, 'b> {
         // since we never pop from the sexps until we drop
         evaluate(unsafe { &*ptr }, self.frame, &mut self.allocations)
             .map(|value| value.into())
-    }
-
-    // TODO: Define trait that will allow us to accept &str and String in 
-    // the same method
-    pub fn evaluate_string(&mut self, input: String) -> Result<SnekValue, SnekError> {
-        let string_ref = self.allocations.as_ptr(input);
-        self.evaluate_str(unsafe { &*string_ref }.as_str())
     }
 }
 

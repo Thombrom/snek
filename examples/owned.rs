@@ -10,7 +10,7 @@ fn main() {
 
     let mut context = OwnedEvaluationContext::new();
     for source in program {
-        match context.evaluate_str(source) {
+        match context.evaluate(source) {
             Ok(value) => println!("{}: {}", source, value),
             Err(err) => println!("{}: {}", source, err)
         }

@@ -1,5 +1,5 @@
 use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt};
-use snek::{OwnedEvaluationContext, AllocationContext};
+use snek::OwnedEvaluationContext;
 
 async fn query(stdout: &mut io::Stdout, lines: &mut io::Lines<io::BufReader<io::Stdin>>) -> io::Result<Option<String>> {
     stdout.write_all("> ".as_bytes()).await.unwrap();
@@ -14,7 +14,7 @@ async fn main() {
     let mut stdout = io::stdout();
     
     while let Ok(Some(line)) = query(&mut stdout, &mut lines).await {
-        match context.evaluate_string(line) {
+        match context.evaluate(line) {
             Ok(value) => println!("{}", value),
             Err(err) => println!("Error: {}", err),
         }
