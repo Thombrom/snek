@@ -2,6 +2,8 @@ use std::borrow::Borrow;
 
 use crate::{builtin::builtin_frame, error::SnekError, interpreter::{evaluate, Frame, SnekValue}, parser::{parse, Sexp}};
 
+trait Droppable {}
+impl<T> Droppable for T {}
 
 /// An evaluation context that takes sexps and evaluates them to give
 /// values. 
@@ -16,7 +18,7 @@ pub struct BorrowedEvaluationContext<'a, 'b> {
 }
 
 pub struct AllocationContext {
-    allocations: Vec<*const ()> 
+    allocations: Vec<*const dyn Droppable> 
 }
 
 impl AllocationContext {
@@ -27,14 +29,14 @@ impl AllocationContext {
     #[allow(dyn_drop)]
     pub fn as_ptr<T>(&mut self, value: T) -> *const T {
         let ptr = Box::into_raw(Box::new(value));
-        self.allocations.push(ptr as *const ());
+        self.allocations.push(ptr as *const dyn Droppable);
         ptr
     }
 
     #[allow(dyn_drop)]
     pub unsafe fn drop(&mut self) {
         self.allocations.drain(..).for_each(|ptr| {
-            drop(unsafe { Box::from_raw(ptr as *mut ()) })
+            unsafe { let _ = Box::from_raw(ptr as *mut dyn Droppable); }
         })
     }
 }

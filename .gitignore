@@ -1,4 +1,4 @@
 /target
 
-test_inputs/*
-test_outputs/*
+test_inputs
+test_outputs
