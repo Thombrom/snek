@@ -29,7 +29,12 @@ impl AllocationContext {
     #[allow(dyn_drop)]
     pub fn as_ptr<T>(&mut self, value: T) -> *const T {
         let ptr = Box::into_raw(Box::new(value));
-        self.allocations.push(ptr as *const dyn Droppable);
+        // Safety: We extend the lifetime of the object type from some anonymous lifetime that `T`
+        // outlives, to `'static`. I don't know if this is sound or not.
+        let transmuted_ptr = unsafe {
+            std::mem::transmute::<*mut (dyn Droppable + '_), *const (dyn Droppable + 'static)>(ptr)
+        };
+        self.allocations.push(transmuted_ptr)
         ptr
     }
 
